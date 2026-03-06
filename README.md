@@ -78,6 +78,9 @@ cd backend
 python -m venv venv
 .\venv\Scripts\activate  # Windows
 pip install -r requirements.txt
+pip install cloudinary
+pip install django-cloudinary-storage
+pip install Pillow
 python manage.py migrate
 # Use the venv Python to run the server
 .\venv\Scripts\python manage.py runserver
