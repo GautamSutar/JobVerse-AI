@@ -224,6 +224,25 @@ frontend/src/
 
 ---
 
+### 🚀 Quick Start (Starting Servers)
+If you have already installed the dependencies, you can start both servers by opening two separate terminals from the root directory:
+
+**Terminal 1 (Backend):**
+```bash
+cd backend
+.\venv\Scripts\activate        # Windows
+# source venv/bin/activate     # Mac/Linux
+python manage.py runserver
+```
+
+**Terminal 2 (Frontend):**
+```bash
+cd frontend
+npm run dev
+```
+
+---
+
 ### Step 1 — Clone the Repository
 
 ```bash
