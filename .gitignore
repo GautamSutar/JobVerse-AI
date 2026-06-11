@@ -20,9 +20,7 @@ dist-ssr/
 .eslintcache
 
 # Environment
-.env
 .env.local
-backend/.env
 
 # IDEs
 .vscode/
