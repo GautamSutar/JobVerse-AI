@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
-import '@tensorflow/tfjs';
+import * as tf from '@tensorflow/tfjs';
 import { Camera, CameraOff, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
 
@@ -9,7 +9,7 @@ const ProctoringMonitor = ({ testId, onViolation }) => {
     const webcamRef = useRef(null);
     const [model, setModel] = useState(null);
     const [isDetecting, setIsDetecting] = useState(false);
-    const [statusText, setStatusText] = useState("Initializing Proctoring...");
+    const [statusText, setStatusText] = useState("Loading AI Models...");
     const noFaceDurationRef = useRef(0);
     const noFaceStrikeCountRef = useRef(0);
     const noiseDurationRef = useRef(0);
@@ -25,19 +25,30 @@ const ProctoringMonitor = ({ testId, onViolation }) => {
 
     // Initialize TensorFlow Model
     useEffect(() => {
+        let isMounted = true;
         const loadModel = async () => {
             try {
-                setStatusText("Loading AI Models...");
-                const loadedModel = await cocoSsd.load();
-                setModel(loadedModel);
-                setStatusText("Active");
-                setIsDetecting(true);
+                if (!isMounted) return;
+                await tf.ready();
+                const loadedModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+                if (isMounted) {
+                    setModel(loadedModel);
+                    setStatusText("Active");
+                    setIsDetecting(true);
+                }
             } catch (err) {
-                console.error("Failed to load COCO-SSD:", err);
-                setStatusText("Proctoring Failed");
+                if (isMounted) {
+                    console.error("Failed to load COCO-SSD:", err);
+                    setStatusText("Proctoring Failed");
+                }
             }
         };
+        
         loadModel();
+        
+        return () => {
+            isMounted = false;
+        };
     }, []);
 
     // Detection Loop

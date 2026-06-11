@@ -22,6 +22,9 @@ dist-ssr/
 # Environment
 .env.local
 
+.env
+frontend/.env
+backend/.env
 # IDEs
 .vscode/
 .idea/

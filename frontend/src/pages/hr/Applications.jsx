@@ -25,6 +25,7 @@ export default function HRApplications() {
     const [loading, setLoading] = useState(true);
 
     const [scheduleModal, setScheduleModal] = useState(null);
+    const [reportModal, setReportModal] = useState(null);
     const [scheduleForm, setScheduleForm] = useState({
         interview_type: 'AI',
         round_type: 'AI_SCREENING',
@@ -185,6 +186,15 @@ export default function HRApplications() {
                                             </button>
                                         )}
 
+                                        {schedule?.status === 'COMPLETED' && (
+                                            <button
+                                                onClick={() => setReportModal(schedule)}
+                                                className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition shadow-sm flex items-center gap-1 border border-indigo-200"
+                                            >
+                                                <FileText size={11} /> View AI Report
+                                            </button>
+                                        )}
+
                                         {/* Schedule date/time chip if scheduled */}
                                         {schedule && (
                                             <span className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -257,6 +267,63 @@ export default function HRApplications() {
                                 <button type="submit" className="btn-primary">Schedule</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* AI Report Modal */}
+            {reportModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 overflow-y-auto pt-20 pb-20">
+                    <div className="card w-full max-w-2xl bg-white border border-gray-200 shadow-2xl relative text-slate-800">
+                        <button onClick={() => setReportModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800 transition-colors">
+                            <X size={24} />
+                        </button>
+                        
+                        <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                            <Bot className="text-indigo-600" /> AI Interview Report
+                        </h2>
+                        
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+                            <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 text-center">
+                                <p className="text-xs text-indigo-500 font-bold uppercase tracking-wider mb-1">Overall</p>
+                                <p className="text-3xl font-black text-indigo-700">{reportModal.final_score ?? '--'}%</p>
+                            </div>
+                            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">
+                                <p className="text-xs text-blue-500 font-bold uppercase tracking-wider mb-1">Technical</p>
+                                <p className="text-2xl font-bold text-blue-700">{reportModal.technical_score ?? '--'}%</p>
+                            </div>
+                            <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 text-center">
+                                <p className="text-xs text-emerald-500 font-bold uppercase tracking-wider mb-1">Coding</p>
+                                <p className="text-2xl font-bold text-emerald-700">{reportModal.coding_score ?? '--'}%</p>
+                            </div>
+                            <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 text-center">
+                                <p className="text-xs text-purple-500 font-bold uppercase tracking-wider mb-1">Soft Skills</p>
+                                <p className="text-2xl font-bold text-purple-700">{reportModal.communication_score ?? '--'}%</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-2 mb-3">Recommendation</h3>
+                                <p className="text-gray-700 leading-relaxed font-medium bg-gray-50 p-3 rounded-lg">{reportModal.recommendation || 'No recommendation available.'}</p>
+                            </div>
+                            
+                            <div>
+                                <h3 className="text-sm font-bold text-green-700 uppercase tracking-wider border-b border-green-200 pb-2 mb-3">Strengths</h3>
+                                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{reportModal.strengths || 'No strengths recorded.'}</p>
+                            </div>
+
+                            <div>
+                                <h3 className="text-sm font-bold text-amber-700 uppercase tracking-wider border-b border-amber-200 pb-2 mb-3">Areas for Improvement</h3>
+                                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{reportModal.weaknesses || 'No weaknesses recorded.'}</p>
+                            </div>
+                        </div>
+                        
+                        <div className="mt-8 flex justify-end">
+                            <button onClick={() => setReportModal(null)} className="btn-secondary text-gray-600 bg-gray-100 border-gray-200 hover:bg-gray-200">
+                                Close Report
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

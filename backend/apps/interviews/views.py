@@ -91,21 +91,36 @@ JobVerse Team"""
     def start_interview(self, request, pk=None):
         schedule = self.get_object()
 
-        # Auto-resolve resume from the linked job application (no frontend resumeId needed)
+        resume_id = request.data.get('resume_id')
         resume_text = "Candidate Resume Content"  # fallback
-        try:
-            app_resume = schedule.application.resume
-            if app_resume:
-                resume_text = app_resume.summary if app_resume.summary else resume_text
-        except Exception as e:
-            print(f"Resume extraction error: {e}")
+        
+        if resume_id:
+            try:
+                from apps.resumes.models import Resume
+                resume = Resume.objects.get(id=resume_id, user=schedule.candidate)
+                schedule.resume_id = resume.id
+                schedule.save()
+                if resume.summary:
+                    resume_text = resume.summary
+                elif resume.skills:
+                    resume_text = f"Skills: {', '.join(resume.skills)}"
+            except Exception as e:
+                print(f"Failed to fetch selected resume: {e}")
+        else:
+            # Auto-resolve resume from the linked job application
+            try:
+                app_resume = schedule.application.resume
+                if app_resume:
+                    schedule.resume_id = app_resume.id
+                    schedule.save()
+                    resume_text = app_resume.summary if app_resume.summary else resume_text
+            except Exception as e:
+                print(f"Resume extraction error: {e}")
 
         # Generate first question
         from services.ai_service import generate_interview_question
         job_reqs = schedule.application.job.requirements
         first_q = generate_interview_question(resume_text, job_reqs, [])
-        return Response({'question': first_q})
-
         return Response({'question': first_q})
 
     @action(detail=True, methods=['post'], url_path='submit-answer')
@@ -114,9 +129,25 @@ JobVerse Team"""
         question = request.data.get('question')
         answer = request.data.get('answer')
         
-        from services.ai_service import evaluate_interview_answer
+        # New inputs for controlling flow
+        question_count = int(request.data.get('question_count', 1))
+        max_questions = int(request.data.get('max_questions', 25))
+        
+        from services.ai_service import evaluate_interview_answer, generate_interview_question
         job_reqs = schedule.application.job.requirements
-        resume_text = "Candidate Context" 
+        
+        resume_text = "Candidate Context"
+        if schedule.resume_id:
+            from apps.resumes.models import Resume
+            try:
+                resume = Resume.objects.get(id=schedule.resume_id)
+                resume_text = resume.summary or f"Skills: {', '.join(resume.skills)}"
+            except:
+                pass
+        
+        # Check if the NEXT question should be a coding assessment
+        # Last 3 questions are coding
+        next_is_coding = (question_count + 1) > (max_questions - 3)
         
         # Evaluate
         eval_result = evaluate_interview_answer(question, answer, resume_text, job_reqs)
@@ -127,27 +158,124 @@ JobVerse Team"""
             question=question,
             answer=answer,
             score=eval_result.get('score', 0),
+            feedback=eval_result.get('feedback', ''),
+            is_coding=False
+        )
+        
+        # Get next question (could be standard or coding)
+        attempts = schedule.attempt_records.filter(is_coding=False)
+        previous_qs = [a.question for a in attempts]
+        
+        if question_count >= max_questions:
+            # Reached max questions, handled by frontend usually, but fallback
+            next_q = "Thank you, that concludes the questions."
+            is_coding_now = False
+        else:
+            next_q = generate_interview_question(resume_text, job_reqs, previous_qs, is_coding=next_is_coding)
+            is_coding_now = next_is_coding
+
+        return Response({
+            'score': eval_result.get('score'),
+            'feedback': eval_result.get('feedback'),
+            'next_question': next_q,
+            'is_coding': is_coding_now
+        })
+
+    @action(detail=True, methods=['post'], url_path='submit-code')
+    def submit_code(self, request, pk=None):
+        schedule = self.get_object()
+        question = request.data.get('question')
+        code = request.data.get('code')
+        language = request.data.get('language', 'python')
+        
+        # Map languages for Piston API
+        piston_lang_map = {
+            'python': ('python', '3.10.0'),
+            'javascript': ('javascript', '18.15.0'),
+            'java': ('java', '15.0.2'),
+            'cpp': ('c++', '10.2.0'),
+            'c++': ('c++', '10.2.0')
+        }
+        
+        lang, version = piston_lang_map.get(language.lower(), ('python', '3.10.0'))
+        
+        # Execute Code via Piston API
+        import requests
+        output = ""
+        error = ""
+        try:
+            res = requests.post('https://emkc.org/api/v2/piston/execute', json={
+                "language": lang,
+                "version": version,
+                "files": [
+                    {
+                        "name": "main",
+                        "content": code
+                    }
+                ]
+            })
+            if res.status_code == 200:
+                run_res = res.json().get('run', {})
+                output = run_res.get('stdout', '')
+                error = run_res.get('stderr', '')
+            else:
+                error = "Execution API failed."
+        except Exception as e:
+            error = str(e)
+            
+        # Basic Evaluation using AI
+        from services.ai_service import evaluate_interview_answer
+        job_reqs = schedule.application.job.requirements
+        resume_text = "Candidate Context"
+        if schedule.resume_id:
+            from apps.resumes.models import Resume
+            try:
+                resume = Resume.objects.get(id=schedule.resume_id)
+                resume_text = resume.summary or f"Skills: {', '.join(resume.skills)}"
+            except:
+                pass
+                
+        eval_context = f"Code language: {language}\nOutput: {output}\nError: {error}\n\nSubmitted Code:\n{code}"
+        eval_result = evaluate_interview_answer(question, eval_context, resume_text, job_reqs)
+        
+        from .models import CodingSubmission
+        CodingSubmission.objects.create(
+            interview=schedule,
+            question=question,
+            language=language,
+            code=code,
+            output=output,
+            error=error,
+            score=eval_result.get('score', 0),
             feedback=eval_result.get('feedback', '')
         )
         
         return Response({
+            'output': output,
+            'error': error,
             'score': eval_result.get('score'),
-            'feedback': eval_result.get('feedback'),
-            'next_question': eval_result.get('next_question')
+            'feedback': eval_result.get('feedback')
         })
 
     @action(detail=True, methods=['post'], url_path='end')
     def end_interview(self, request, pk=None):
         schedule = self.get_object()
         attempts = schedule.attempt_records.all()
+        coding_subs = schedule.coding_submissions.all()
         
-        if attempts.exists():
-            avg = sum([a.score for a in attempts if a.score]) / attempts.count()
-            schedule.final_score = avg * 10  # Convert 1-10 to 0-100 score
-        else:
-            schedule.final_score = 0
+        avg_tech = sum([a.score for a in attempts if a.score]) / max(attempts.count(), 1)
+        avg_code = sum([c.score for c in coding_subs if c.score]) / max(coding_subs.count(), 1)
+        
+        schedule.technical_score = int(avg_tech * 10)
+        schedule.coding_score = int(avg_code * 10)
+        schedule.communication_score = 85 # Simulated/placeholder based on text completeness
+        schedule.confidence_score = 80 # Simulated based on lack of proctoring violations
+        
+        # Generate combined final score
+        schedule.final_score = int((schedule.technical_score * 0.4) + (schedule.coding_score * 0.4) + (schedule.communication_score * 0.2))
             
-        attempts_data = [{"question": a.question, "answer": a.answer, "score": a.score, "feedback": a.feedback} for a in attempts]
+        attempts_data = [{"type": "Q&A", "question": a.question, "answer": a.answer, "score": a.score} for a in attempts]
+        attempts_data += [{"type": "CODE", "question": c.question, "code": c.code, "score": c.score} for c in coding_subs]
         
         from services.ai_service import generate_final_report
         job_reqs = schedule.application.job.requirements

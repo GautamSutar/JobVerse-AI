@@ -69,10 +69,12 @@ export default function DashboardLayout({ user, setUser, role }) {
     };
 
     const isActive = (to) => location.pathname === to || location.pathname.startsWith(to + '/');
+    const isInterviewSession = location.pathname.includes('/student/interview/');
 
     return (
         <div className="flex min-h-screen bg-black">
             {/* Sidebar */}
+            {!isInterviewSession && (
             <aside className={`dashboard-sidebar ${collapsed ? 'w-16' : 'w-64'} flex-shrink-0 bg-[#0a0a0a] border-r border-white/10 flex flex-col transition-all duration-300 z-30`}>
                 {/* Logo */}
                 <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
@@ -125,10 +127,12 @@ export default function DashboardLayout({ user, setUser, role }) {
                     </button>
                 </div>
             </aside>
+            )}
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 {/* Top bar */}
+                {!isInterviewSession && (
                 <header className="h-14 bg-black/70 backdrop-blur border-b border-white/10 flex items-center px-6 gap-4 flex-shrink-0">
                     <div className="flex-1" />
                     <div className="flex items-center gap-3">
@@ -138,6 +142,7 @@ export default function DashboardLayout({ user, setUser, role }) {
                         <span className="text-slate-300 text-sm font-medium hidden sm:block">{user?.first_name || user?.username}</span>
                     </div>
                 </header>
+                )}
 
                 {/* Page content */}
                 <main className="flex-1 overflow-y-auto p-6">

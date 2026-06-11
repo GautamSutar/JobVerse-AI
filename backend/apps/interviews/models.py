@@ -179,6 +179,7 @@ class InterviewSchedule(models.Model):
     candidate = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='interview_schedules')
     interview_type = models.CharField(max_length=20, choices=INTERVIEW_TYPE_CHOICES, default='AI')
     round_type = models.CharField(max_length=20, choices=ROUND_TYPE_CHOICES, default='AI_SCREENING')
+    resume_id = models.IntegerField(null=True, blank=True)
     scheduled_date = models.DateField()
     scheduled_time = models.TimeField()
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Scheduled')
@@ -187,6 +188,11 @@ class InterviewSchedule(models.Model):
     
     # Store the final report info
     final_score = models.IntegerField(null=True, blank=True)
+    technical_score = models.IntegerField(null=True, blank=True)
+    communication_score = models.IntegerField(null=True, blank=True)
+    confidence_score = models.IntegerField(null=True, blank=True)
+    coding_score = models.IntegerField(null=True, blank=True)
+    proctoring_score = models.IntegerField(null=True, blank=True)
     strengths = models.TextField(blank=True, null=True)
     weaknesses = models.TextField(blank=True, null=True)
     recommendation = models.TextField(blank=True, null=True)
@@ -202,6 +208,22 @@ class InterviewAttempt(models.Model):
     score = models.IntegerField(null=True, blank=True)
     feedback = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    is_coding = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Attempt by {self.interview.candidate.username}"
+
+class CodingSubmission(models.Model):
+    interview = models.ForeignKey(InterviewSchedule, on_delete=models.CASCADE, related_name='coding_submissions')
+    question = models.TextField()
+    language = models.CharField(max_length=50)
+    code = models.TextField()
+    output = models.TextField(blank=True, null=True)
+    error = models.TextField(blank=True, null=True)
+    execution_time = models.FloatField(null=True, blank=True)
+    score = models.IntegerField(null=True, blank=True)
+    feedback = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Coding Submission by {self.interview.candidate.username} ({self.language})"

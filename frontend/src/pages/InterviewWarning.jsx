@@ -10,26 +10,43 @@ const InterviewWarning = () => {
 
     const [schedule, setSchedule] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [resumes, setResumes] = useState([]);
+    const [selectedResumeId, setSelectedResumeId] = useState('');
 
     useEffect(() => {
-        const fetchSchedule = async () => {
+        const fetchData = async () => {
             try {
-                const res = await api.get(`/interviews/schedules/${scheduleId}/`);
-                setSchedule(res.data);
+                const [scheduleRes, resumesRes] = await Promise.all([
+                    api.get(`/interviews/schedules/${scheduleId}/`),
+                    api.get('/resumes/')
+                ]);
+                setSchedule(scheduleRes.data);
+                const resumeData = resumesRes.data;
+                const fetchedResumes = Array.isArray(resumeData) ? resumeData : (resumeData.results || []);
+                setResumes(fetchedResumes);
+                if (fetchedResumes.length > 0) {
+                    setSelectedResumeId(fetchedResumes[0].id);
+                }
             } catch (err) {
-                toast.error('Failed to load interview details.');
+                toast.error('Failed to load interview details or resumes.');
             } finally {
                 setLoading(false);
             }
         };
-        fetchSchedule();
+        fetchData();
     }, [scheduleId]);
 
     const handleStart = () => {
         toast.loading('Preparing Interview Environment...', { duration: 1500 });
+        
+        // Enter fullscreen on user gesture
+        const elem = document.documentElement;
+        if (elem.requestFullscreen) {
+            elem.requestFullscreen().catch(err => console.log(err));
+        }
+        
         setTimeout(() => {
-            // No resumeId needed — backend auto-uses the application resume
-            navigate(`/student/interview/${scheduleId}`);
+            navigate(`/student/interview/${scheduleId}`, { state: { resumeId: selectedResumeId } });
         }, 1500);
     };
 
@@ -132,17 +149,35 @@ const InterviewWarning = () => {
                             </div>
                         )}
 
-                        {/* Resume notice */}
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-5 flex gap-4 items-start shadow-lg">
-                            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                                <CheckCircle size={20} className="text-emerald-400" />
+                        {/* Resume Selection */}
+                        <div className="bg-[#0a0a0a] border border-indigo-500/20 rounded-2xl p-5 shadow-lg space-y-3">
+                            <div className="flex items-center gap-3 mb-2">
+                                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                                    <CheckCircle size={16} className="text-indigo-400" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-white text-sm">Select Resume for Interview</h3>
+                                    <p className="text-xs text-slate-400">The AI will base technical questions on this resume.</p>
+                                </div>
                             </div>
-                            <div>
-                                <h3 className="font-bold text-emerald-400 mb-1">Resume Automatically Selected</h3>
-                                <p className="text-sm text-emerald-500/80 leading-relaxed">
-                                    The AI will base your technical questions on the resume you submitted when applying for this role. No action needed.
-                                </p>
-                            </div>
+                            
+                            {resumes.length > 0 ? (
+                                <select 
+                                    value={selectedResumeId} 
+                                    onChange={(e) => setSelectedResumeId(e.target.value)}
+                                    className="w-full bg-[#111] border border-slate-700 rounded-xl px-4 py-3 text-slate-300 focus:outline-none focus:border-indigo-500 transition-colors"
+                                >
+                                    {resumes.map(r => (
+                                        <option key={r.id} value={r.id}>
+                                            {r.file?.split('/').pop() || `Resume #${r.id}`}
+                                        </option>
+                                    ))}
+                                </select>
+                            ) : (
+                                <div className="text-amber-400 text-sm bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
+                                    No resumes found. The AI will use the resume from your job application.
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1" />

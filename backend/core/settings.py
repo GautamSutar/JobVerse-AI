@@ -221,3 +221,4 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # AI Service Configuration
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY') or os.getenv('OPENAI_API_KEY')

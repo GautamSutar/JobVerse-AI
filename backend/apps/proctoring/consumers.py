@@ -39,7 +39,8 @@ class ProctoringConsumer(AsyncWebsocketConsumer):
         message = data.get('message', '')
 
         # Process proctoring violation event
-        if event_type in ['tab_switch', 'copy_paste', 'blur']:
+        violation_types = ['tab_switch', 'copy_paste', 'blur', 'multiple_persons', 'no_face', 'looking_away', 'voice_detected']
+        if event_type in violation_types:
             # Log violation to the database asynchronously
             await self.log_violation(self.interview_id, event_type, message)
             
@@ -71,9 +72,16 @@ class ProctoringConsumer(AsyncWebsocketConsumer):
         try:
             interview = InterviewSchedule.objects.get(id=interview_id)
             
-            db_type = 'TAB_SWITCH'
-            if event_type == 'copy_paste':
-                db_type = 'COPY_PASTE'
+            db_type_map = {
+                'tab_switch': 'TAB_SWITCH',
+                'copy_paste': 'COPY_PASTE',
+                'blur': 'BLUR',
+                'multiple_persons': 'MULTIPLE_PERSONS',
+                'no_face': 'NO_FACE',
+                'looking_away': 'LOOKING_AWAY',
+                'voice_detected': 'VOICE_DETECTED'
+            }
+            db_type = db_type_map.get(event_type, 'OTHER')
                 
             ViolationLog.objects.create(
                 interview=interview,

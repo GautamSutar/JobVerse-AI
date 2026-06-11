@@ -1,20 +1,70 @@
 import os
 import re
 import json
-import google.generativeai as genai
+import requests
 from django.conf import settings
 
-# Initialize Gemini
-genai.configure(api_key=settings.GEMINI_API_KEY)
-# Using gemini-flash-latest since 1.5 is unavailable and 2.0 has quota limits
-model = genai.GenerativeModel('gemini-flash-latest')
+OPENROUTER_API_KEY = getattr(settings, 'OPENROUTER_API_KEY', os.getenv('OPENROUTER_API_KEY'))
+OPENROUTER_MODEL = "openai/gpt-4o-mini"
+
+def _call_openrouter(prompt, system_prompt="You are a helpful AI assistant."):
+    if not OPENROUTER_API_KEY:
+        # Fallback to a mock response if no key is provided during testing
+        print("WARNING: OPENROUTER_API_KEY is not set.")
+        return ""
+    
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=60
+        )
+        if response.status_code == 200:
+            res_json = response.json()
+            return res_json['choices'][0]['message']['content'].strip()
+        else:
+            print(f"OpenRouter Error: {response.text}")
+            raise Exception(f"API returned {response.status_code}")
+    except Exception as e:
+        print(f"OpenRouter Request Failed: {e}")
+        raise e
+
+def _extract_json(text):
+    text = text.strip()
+    if text.startswith('```json'):
+        text = text[7:]
+    elif text.startswith('```'):
+        text = text[3:]
+    if text.endswith('```'):
+        text = text[:-3]
+    text = text.strip()
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except:
+            pass
+    try:
+        return json.loads(text)
+    except:
+        return None
 
 def evaluate_resume_base(resume_text, initial_ats_score):
-    """
-    Evaluates a resume's overall quality using Gemini to provide a final ATS score, extracted skills, and suggestions.
-    """
+    system_prompt = "You are an expert AI Resume ATS Analyzer."
     prompt = f"""
-    You are an expert AI Resume ATS Analyzer.
     A rule-based system gave this resume an initial score of {initial_ats_score} / 100 based on word count, sections, action verbs, and metrics.
     
     Resume Text:
@@ -27,7 +77,7 @@ def evaluate_resume_base(resume_text, initial_ats_score):
     4. List areas of weakness or missing sections.
     5. Provide actionable suggestions to improve the resume for ATS systems.
 
-    Return ONLY a valid JSON object with the following keys, no markdown formatting (e.g., do not use ```json...):
+    Return ONLY a valid JSON object with the following keys, no markdown formatting:
     {{
         "final_ats_score": integer between 0-100,
         "skills": ["skill1", "skill2"],
@@ -38,13 +88,11 @@ def evaluate_resume_base(resume_text, initial_ats_score):
     """
     
     try:
-        response = model.generate_content(prompt)
-        result_text = response.text.strip()
-        # More robust JSON extraction
-        match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        return json.loads(result_text)
+        result_text = _call_openrouter(prompt, system_prompt)
+        parsed = _extract_json(result_text)
+        if parsed:
+            return parsed
+        raise Exception("JSON Parsing Failed")
     except Exception as e:
         print(f"AI Base Evaluation Error: {e}")
         return {
@@ -56,11 +104,8 @@ def evaluate_resume_base(resume_text, initial_ats_score):
         }
 
 def evaluate_resume_for_job(resume_text, job_description, heuristic_score):
-    """
-    Evaluates how well a resume matches a specific Job Description.
-    """
+    system_prompt = "You are an expert technical recruiter matching a resume to a job description."
     prompt = f"""
-    You are an expert technical recruiter matching a resume to a job description.
     Job Requirements:
     {job_description}
 
@@ -79,12 +124,11 @@ def evaluate_resume_for_job(resume_text, job_description, heuristic_score):
     """
     
     try:
-        response = model.generate_content(prompt)
-        result_text = response.text.strip()
-        match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        return json.loads(result_text)
+        result_text = _call_openrouter(prompt, system_prompt)
+        parsed = _extract_json(result_text)
+        if parsed:
+            return parsed
+        raise Exception("JSON Parsing Failed")
     except Exception as e:
         print(f"AI JD Matching Error: {e}")
         return {
@@ -93,38 +137,42 @@ def evaluate_resume_for_job(resume_text, job_description, heuristic_score):
         }
 
 
-def generate_interview_question(resume_text, job_requirements, previous_questions=None):
-    """
-    Generates a new, dynamic interview question tailored to the candidate.
-    """
+def generate_interview_question(resume_text, job_requirements, previous_questions=None, is_coding=False):
     if previous_questions is None:
         previous_questions = []
         
-    prompt = f"""
-    You are an expert technical interviewer conducting an interview.
-    Job Requirements: {job_requirements}
-    Candidate Resume: {resume_text}
-    Questions Already Asked: {previous_questions}
+    system_prompt = "You are an expert technical interviewer conducting an interview."
+    
+    if is_coding:
+        prompt = f"""
+        Job Requirements: {job_requirements}
+        Candidate Resume: {resume_text}
+        Questions Already Asked: {previous_questions}
 
-    Generate the next highly technical interview question for this candidate. Do not repeat previous questions.
-    Return ONLY a string containing the question text.
-    """
+        Generate a highly relevant Data Structures & Algorithms (DSA) or Object-Oriented Programming (OOP) coding problem for this candidate.
+        The difficulty should be medium.
+        Return ONLY a string containing the question text, with clear requirements and examples. Do not provide the solution.
+        """
+    else:
+        prompt = f"""
+        Job Requirements: {job_requirements}
+        Candidate Resume: {resume_text}
+        Questions Already Asked: {previous_questions}
+
+        Generate the next highly technical interview question for this candidate based on their resume skills, projects, DBMS, OS, or Networking. Do not repeat previous questions.
+        Return ONLY a string containing the question text.
+        """
     
     try:
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        return _call_openrouter(prompt, system_prompt)
     except Exception as e:
         print(f"AI Generation Error: {e}")
         return "Could you provide more details about your relevant experience for this role?"
 
 
 def evaluate_interview_answer(question, answer, resume_text, job_requirements):
-    """
-    Evaluates a candidate's answer to an interview question.
-    Returns structured JSON with score, feedback, and a suggested next question.
-    """
+    system_prompt = "You are an expert technical interviewer. Evaluate the candidate's answer based on Technical Knowledge, Accuracy, Communication, Confidence, Relevance, and Completeness."
     prompt = f"""
-    You are an expert technical interviewer. Evaluate the candidate's answer.
     Job Requirements: {job_requirements}
     Resume Context: {resume_text}
     
@@ -133,21 +181,18 @@ def evaluate_interview_answer(question, answer, resume_text, job_requirements):
 
     Return ONLY a valid JSON object with the following keys, no markdown formatting:
     {{
-        "score": integer between 1-10 rating the answer,
+        "score": integer between 1-10 rating the overall quality of the answer,
         "feedback": "Constructive feedback on the answer",
-        "next_question": "A logical follow-up question based on their answer, or a new topic if they failed"
+        "next_question": "A logical follow-up question based on their answer, or a new topic if they answered sufficiently"
     }}
     """
     
     try:
-        response = model.generate_content(prompt)
-        result_text = response.text.strip()
-        if result_text.startswith('```json'):
-            result_text = result_text[7:]
-        if result_text.endswith('```'):
-            result_text = result_text[:-3]
-            
-        return json.loads(result_text)
+        result_text = _call_openrouter(prompt, system_prompt)
+        parsed = _extract_json(result_text)
+        if parsed:
+            return parsed
+        raise Exception("JSON Parsing Failed")
     except Exception as e:
         print(f"AI Evaluation Error: {e}")
         return {
@@ -158,12 +203,8 @@ def evaluate_interview_answer(question, answer, resume_text, job_requirements):
 
 
 def generate_final_report(job_requirements, attempts_data):
-    """
-    Generates a final evaluation report for the candidate based on their answers.
-    attempts_data: list of dicts with {'question': q, 'answer': a, 'score': s, 'feedback': f}
-    """
+    system_prompt = "You are an expert technical interviewer summarizing an interview."
     prompt = f"""
-    You are an expert technical interviewer summarizing an interview.
     Job Requirements: {job_requirements}
     Interview Transcript: {json.dumps(attempts_data)}
     
@@ -172,18 +213,15 @@ def generate_final_report(job_requirements, attempts_data):
     {{
         "strengths": "String summarizing candidate's strengths based on the answers.",
         "weaknesses": "String summarizing areas for improvement.",
-        "recommendation": "Final recommendation (e.g., 'Proceed to technical round', 'Reject', 'Hire')."
+        "recommendation": "Final recommendation (e.g., 'Strongly Recommended', 'Recommended', 'Consider', 'Not Recommended')."
     }}
     """
     try:
-        response = model.generate_content(prompt)
-        result_text = response.text.strip()
-        if result_text.startswith('```json'):
-            result_text = result_text[7:]
-        if result_text.endswith('```'):
-            result_text = result_text[:-3]
-            
-        return json.loads(result_text)
+        result_text = _call_openrouter(prompt, system_prompt)
+        parsed = _extract_json(result_text)
+        if parsed:
+            return parsed
+        raise Exception("JSON Parsing Failed")
     except Exception as e:
         print(f"AI Report Generation Error: {e}")
         return {
