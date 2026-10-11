@@ -38,6 +38,7 @@ The application follows a structured path for both recruiters and candidates:
 - HR receives an email notification with the summary.
 
 ---
+---
 
 ## 🌟 Key Features
 
